@@ -5,9 +5,9 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using MediaBrowser.Controller.Library;
-using MediaBrowser.Controller.Plugins;
 using MediaBrowser.Controller.Session;
 using MediaBrowser.Model.Session;
+using Microsoft.Extensions.Hosting;
 
 namespace Elmuffo.Plugin.AutoChapterSkip
 {
@@ -15,7 +15,7 @@ namespace Elmuffo.Plugin.AutoChapterSkip
     /// Automatically skip chapters matching regex.
     /// Commands clients to seek to the end of matched chapters as soon as they start playing them.
     /// </summary>
-    public class AutoChapterSkip : IServerEntryPoint
+    public class AutoChapterSkip : IHostedService
     {
         private readonly object _currentPositionsLock = new();
         private readonly Dictionary<string, long?> _currentPositions;
@@ -35,8 +35,9 @@ namespace Elmuffo.Plugin.AutoChapterSkip
         /// <summary>
         /// Set it up.
         /// </summary>
+        /// <param name="cancellationToken">Cancellation token.</param>
         /// <returns>Task.</returns>
-        public Task RunAsync()
+        public Task StartAsync(CancellationToken cancellationToken)
         {
             _sessionManager.PlaybackStopped += SessionManager_PlaybackStopped;
             _sessionManager.PlaybackProgress += SessionManager_PlaybackProgress;
@@ -56,7 +57,7 @@ namespace Elmuffo.Plugin.AutoChapterSkip
             var regex = new Regex(match);
             var chapter = chapters.LastOrDefault(c => c.StartPositionTicks < e.PlaybackPositionTicks);
 
-            if (chapter == null || !regex.IsMatch(chapter.Name))
+            if (chapter.Name == null || !regex.IsMatch(chapter.Name))
             {
                 return;
             }
@@ -117,27 +118,15 @@ namespace Elmuffo.Plugin.AutoChapterSkip
         }
 
         /// <summary>
-        /// Dispose.
-        /// </summary>
-        public void Dispose()
-        {
-            Dispose(true);
-            GC.SuppressFinalize(this);
-        }
-
-        /// <summary>
         /// Protected dispose.
         /// </summary>
-        /// <param name="disposing">Dispose.</param>
-        protected virtual void Dispose(bool disposing)
+        /// <param name="cancellationToken">Dispose.</param>
+        /// <returns>Task.</returns>
+        public Task StopAsync(CancellationToken cancellationToken)
         {
-            if (!disposing)
-            {
-                return;
-            }
-
             _sessionManager.PlaybackStopped -= SessionManager_PlaybackStopped;
             _sessionManager.PlaybackProgress -= SessionManager_PlaybackProgress;
+            return Task.CompletedTask;
         }
     }
 }
