@@ -103,6 +103,17 @@ namespace Elmuffo.Plugin.AutoChapterSkip
                        SeekPositionTicks = ticks
                    },
                    CancellationToken.None);
+
+                _sessionManager.SendMessageCommand(
+                    e.Session.Id,
+                    e.Session.Id,
+                    new MessageCommand
+                    {
+                        Header = "Auto Chapter Skip",
+                        Text = chapterName + " skipped",
+                        TimeoutMs = 2000,
+                    },
+                    CancellationToken.None);
             };
 
             ++remainingChaptersIdx;
