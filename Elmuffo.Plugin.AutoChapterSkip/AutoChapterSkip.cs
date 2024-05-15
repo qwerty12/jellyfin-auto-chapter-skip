@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -55,9 +54,20 @@ namespace Elmuffo.Plugin.AutoChapterSkip
 
             var chapters = e.Session.NowPlayingItem.Chapters;
             var regex = new Regex(match);
-            var chapter = chapters.LastOrDefault(c => c.StartPositionTicks < e.PlaybackPositionTicks);
+            var remainingChaptersIdx = -1;
+            string? chapterName = null;
 
-            if (chapter.Name == null || !regex.IsMatch(chapter.Name))
+            for (var i = chapters.Count - 1; i >= 0; --i)
+            {
+                if (chapters[i].StartPositionTicks < e.PlaybackPositionTicks)
+                {
+                    remainingChaptersIdx = i;
+                    chapterName = chapters[i].Name;
+                    break;
+                }
+            }
+
+            if (chapterName is null || !regex.IsMatch(chapterName))
             {
                 return;
             }
@@ -78,14 +88,31 @@ namespace Elmuffo.Plugin.AutoChapterSkip
                    CancellationToken.None);
             };
 
-            var remainingChapters = chapters.Skip(chapters.IndexOf(chapter) + 1);
-            var nextChapter = remainingChapters.FirstOrDefault(c => !regex.IsMatch(c.Name));
-            var nextChapterTicks = nextChapter?.StartPositionTicks;
-
-            if (nextChapterTicks == null)
+            ++remainingChaptersIdx;
+            long? nextChapterTicks = null;
+            for (var i = remainingChaptersIdx; i < chapters.Count; ++i)
             {
-                if (!remainingChapters.Any(c => !regex.IsMatch(c.Name)) && e.PlaybackPositionTicks < e.Item.RunTimeTicks)
+                var input = chapters[i].Name;
+                if (input is not null && !regex.IsMatch(input))
                 {
+                    nextChapterTicks = chapters[i].StartPositionTicks;
+                    break;
+                }
+            }
+
+            if (nextChapterTicks is null)
+            {
+                if (e.PlaybackPositionTicks < e.Item.RunTimeTicks)
+                {
+                    for (var i = remainingChaptersIdx; i < chapters.Count; ++i)
+                    {
+                        var input = chapters[i].Name;
+                        if (input != null && !regex.IsMatch(input))
+                        {
+                            return;
+                        }
+                    }
+
                     send(e.Item.RunTimeTicks);
                 }
 
