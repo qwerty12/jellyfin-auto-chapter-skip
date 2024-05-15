@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Session;
+using MediaBrowser.Model.Plugins;
 using MediaBrowser.Model.Session;
 using Microsoft.Extensions.Hosting;
 
@@ -19,6 +20,7 @@ namespace Elmuffo.Plugin.AutoChapterSkip
         private readonly object _currentPositionsLock = new();
         private readonly Dictionary<string, long?> _currentPositions;
         private readonly ISessionManager _sessionManager;
+        private Regex? _matchRegex;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="AutoChapterSkip"/> class.
@@ -38,22 +40,37 @@ namespace Elmuffo.Plugin.AutoChapterSkip
         /// <returns>Task.</returns>
         public Task StartAsync(CancellationToken cancellationToken)
         {
+            ApplySettingsFromConfig();
             _sessionManager.PlaybackStopped += SessionManager_PlaybackStopped;
             _sessionManager.PlaybackProgress += SessionManager_PlaybackProgress;
+            Plugin.Instance!.ConfigurationChanged += Plugin_ConfigurationChanged;
             return Task.CompletedTask;
+        }
+
+        private void Plugin_ConfigurationChanged(object? sender, BasePluginConfiguration e)
+        {
+            ApplySettingsFromConfig();
+        }
+
+        private void ApplySettingsFromConfig()
+        {
+            var match = Plugin.Instance!.Configuration.Match;
+            _matchRegex = !string.IsNullOrEmpty(match) ? new Regex(match, RegexOptions.Compiled | RegexOptions.NonBacktracking) : null;
         }
 
         private void SessionManager_PlaybackProgress(object? sender, PlaybackProgressEventArgs e)
         {
-            var match = Plugin.Instance!.Configuration.Match;
-
-            if (string.IsNullOrEmpty(match))
+            if (_matchRegex is null)
             {
                 return;
             }
 
             var chapters = e.Session.NowPlayingItem.Chapters;
-            var regex = new Regex(match);
+            if (chapters is null || chapters.Count == 0)
+            {
+                return;
+            }
+
             var remainingChaptersIdx = -1;
             string? chapterName = null;
 
@@ -67,7 +84,7 @@ namespace Elmuffo.Plugin.AutoChapterSkip
                 }
             }
 
-            if (chapterName is null || !regex.IsMatch(chapterName))
+            if (chapterName is null || !_matchRegex.IsMatch(chapterName))
             {
                 return;
             }
@@ -93,7 +110,7 @@ namespace Elmuffo.Plugin.AutoChapterSkip
             for (var i = remainingChaptersIdx; i < chapters.Count; ++i)
             {
                 var input = chapters[i].Name;
-                if (input is not null && !regex.IsMatch(input))
+                if (input is not null && !_matchRegex.IsMatch(input))
                 {
                     nextChapterTicks = chapters[i].StartPositionTicks;
                     break;
@@ -107,7 +124,7 @@ namespace Elmuffo.Plugin.AutoChapterSkip
                     for (var i = remainingChaptersIdx; i < chapters.Count; ++i)
                     {
                         var input = chapters[i].Name;
-                        if (input != null && !regex.IsMatch(input))
+                        if (input != null && !_matchRegex.IsMatch(input))
                         {
                             return;
                         }
@@ -151,8 +168,9 @@ namespace Elmuffo.Plugin.AutoChapterSkip
         /// <returns>Task.</returns>
         public Task StopAsync(CancellationToken cancellationToken)
         {
-            _sessionManager.PlaybackStopped -= SessionManager_PlaybackStopped;
             _sessionManager.PlaybackProgress -= SessionManager_PlaybackProgress;
+            _sessionManager.PlaybackStopped -= SessionManager_PlaybackStopped;
+            Plugin.Instance!.ConfigurationChanged -= Plugin_ConfigurationChanged;
             return Task.CompletedTask;
         }
     }
