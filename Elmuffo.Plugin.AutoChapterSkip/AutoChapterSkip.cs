@@ -1,5 +1,4 @@
-using System;
-using System.Collections.Generic;
+using System.Collections.Concurrent;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -17,8 +16,7 @@ namespace Elmuffo.Plugin.AutoChapterSkip
     /// </summary>
     public class AutoChapterSkip : IHostedService
     {
-        private readonly object _currentPositionsLock = new();
-        private readonly Dictionary<string, long?> _currentPositions;
+        private readonly ConcurrentDictionary<string, long?> _currentPositions;
         private readonly ISessionManager _sessionManager;
         private Regex? _matchRegex;
 
@@ -29,7 +27,7 @@ namespace Elmuffo.Plugin.AutoChapterSkip
         public AutoChapterSkip(
             ISessionManager sessionManager)
         {
-            _currentPositions = new Dictionary<string, long?>();
+            _currentPositions = new ConcurrentDictionary<string, long?>();
             _sessionManager = sessionManager;
         }
 
@@ -89,9 +87,9 @@ namespace Elmuffo.Plugin.AutoChapterSkip
                 return;
             }
 
-            var send = (long? ticks) =>
+            void Send(long? ticks)
             {
-                Lock(() => _currentPositions[e.Session.Id] = ticks);
+                _currentPositions[e.Session.Id] = ticks;
 
                 _sessionManager.SendPlaystateCommand(
                    e.Session.Id,
@@ -114,7 +112,7 @@ namespace Elmuffo.Plugin.AutoChapterSkip
                         TimeoutMs = 2000,
                     },
                     CancellationToken.None);
-            };
+            }
 
             ++remainingChaptersIdx;
             long? nextChapterTicks = null;
@@ -135,41 +133,31 @@ namespace Elmuffo.Plugin.AutoChapterSkip
                     for (var i = remainingChaptersIdx; i < chapters.Count; ++i)
                     {
                         var input = chapters[i].Name;
-                        if (input != null && !_matchRegex.IsMatch(input))
+                        if (input is not null && !_matchRegex.IsMatch(input))
                         {
                             return;
                         }
                     }
 
-                    send(e.Item.RunTimeTicks);
+                    Send(e.Item.RunTimeTicks);
                 }
 
                 return;
             }
 
-            long? previousChapterTicks = null;
-
-            Lock(() => _currentPositions.TryGetValue(e.Session.Id, out previousChapterTicks));
+            _currentPositions.TryGetValue(e.Session.Id, out var previousChapterTicks);
 
             if (e.PlaybackPositionTicks <= previousChapterTicks)
             {
                 return;
             }
 
-            send(nextChapterTicks);
+            Send(nextChapterTicks);
         }
 
         private void SessionManager_PlaybackStopped(object? sender, PlaybackStopEventArgs e)
         {
-            Lock(() => _currentPositions.Remove(e.Session.Id));
-        }
-
-        private void Lock(Action work)
-        {
-            lock (_currentPositionsLock)
-            {
-                work();
-            }
+            _currentPositions.TryRemove(e.Session.Id, out _);
         }
 
         /// <summary>
@@ -182,6 +170,8 @@ namespace Elmuffo.Plugin.AutoChapterSkip
             _sessionManager.PlaybackProgress -= SessionManager_PlaybackProgress;
             _sessionManager.PlaybackStopped -= SessionManager_PlaybackStopped;
             Plugin.Instance!.ConfigurationChanged -= Plugin_ConfigurationChanged;
+            _matchRegex = null;
+            _currentPositions.Clear();
             return Task.CompletedTask;
         }
     }
