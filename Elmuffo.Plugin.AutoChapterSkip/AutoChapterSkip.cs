@@ -58,20 +58,20 @@ namespace Elmuffo.Plugin.AutoChapterSkip
 
         private void SessionManager_PlaybackProgress(object? sender, PlaybackProgressEventArgs e)
         {
-            if (_matchRegex is null)
-            {
-                return;
-            }
-
             var chapters = e.Session.NowPlayingItem.Chapters;
             if (chapters is null || chapters.Count == 0)
             {
                 return;
             }
 
+            var regex = _matchRegex;
+            if (regex is null)
+            {
+                return;
+            }
+
             var remainingChaptersIdx = -1;
             string? chapterName = null;
-
             for (var i = chapters.Count - 1; i >= 0; --i)
             {
                 if (chapters[i].StartPositionTicks < e.PlaybackPositionTicks)
@@ -82,7 +82,7 @@ namespace Elmuffo.Plugin.AutoChapterSkip
                 }
             }
 
-            if (chapterName is null || !_matchRegex.IsMatch(chapterName))
+            if (chapterName is null || !regex.IsMatch(chapterName))
             {
                 return;
             }
@@ -119,7 +119,7 @@ namespace Elmuffo.Plugin.AutoChapterSkip
             for (var i = remainingChaptersIdx; i < chapters.Count; ++i)
             {
                 var input = chapters[i].Name;
-                if (input is not null && !_matchRegex.IsMatch(input))
+                if (input is not null && !regex.IsMatch(input))
                 {
                     nextChapterTicks = chapters[i].StartPositionTicks;
                     break;
@@ -133,7 +133,7 @@ namespace Elmuffo.Plugin.AutoChapterSkip
                     for (var i = remainingChaptersIdx; i < chapters.Count; ++i)
                     {
                         var input = chapters[i].Name;
-                        if (input is not null && !_matchRegex.IsMatch(input))
+                        if (input is not null && !regex.IsMatch(input))
                         {
                             return;
                         }
