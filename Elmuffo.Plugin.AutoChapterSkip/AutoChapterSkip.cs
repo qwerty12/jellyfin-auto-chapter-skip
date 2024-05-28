@@ -87,24 +87,25 @@ namespace Elmuffo.Plugin.AutoChapterSkip
                 return;
             }
 
-            void Send(long? ticks)
+            void Send(long? ticks, string chapterName, SessionInfo session)
             {
-                _currentPositions[e.Session.Id] = ticks;
+                var sessionId = session.Id;
+                _currentPositions[sessionId] = ticks;
 
                 _sessionManager.SendPlaystateCommand(
-                   e.Session.Id,
-                   e.Session.Id,
+                   sessionId,
+                   sessionId,
                    new PlaystateRequest
                    {
                        Command = PlaystateCommand.Seek,
-                       ControllingUserId = e.Session.UserId.ToString("N"),
+                       ControllingUserId = session.UserId.ToString("N"),
                        SeekPositionTicks = ticks
                    },
                    CancellationToken.None);
 
                 _sessionManager.SendMessageCommand(
-                    e.Session.Id,
-                    e.Session.Id,
+                    sessionId,
+                    sessionId,
                     new MessageCommand
                     {
                         Header = "Auto Chapter Skip",
@@ -139,7 +140,7 @@ namespace Elmuffo.Plugin.AutoChapterSkip
                         }
                     }
 
-                    Send(e.Item.RunTimeTicks);
+                    Send(e.Item.RunTimeTicks, chapterName, e.Session);
                 }
 
                 return;
@@ -152,7 +153,7 @@ namespace Elmuffo.Plugin.AutoChapterSkip
                 return;
             }
 
-            Send(nextChapterTicks);
+            Send(nextChapterTicks, chapterName, e.Session);
         }
 
         private void SessionManager_PlaybackStopped(object? sender, PlaybackStopEventArgs e)
