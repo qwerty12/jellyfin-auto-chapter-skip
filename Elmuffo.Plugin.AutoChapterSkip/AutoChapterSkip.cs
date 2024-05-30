@@ -16,7 +16,7 @@ namespace Elmuffo.Plugin.AutoChapterSkip
     /// </summary>
     public class AutoChapterSkip : IHostedService
     {
-        private readonly ConcurrentDictionary<string, long?> _currentPositions;
+        private readonly ConcurrentDictionary<string, long> _currentPositions;
         private readonly ISessionManager _sessionManager;
         private Regex? _matchRegex;
 
@@ -27,7 +27,7 @@ namespace Elmuffo.Plugin.AutoChapterSkip
         public AutoChapterSkip(
             ISessionManager sessionManager)
         {
-            _currentPositions = new ConcurrentDictionary<string, long?>();
+            _currentPositions = new ConcurrentDictionary<string, long>();
             _sessionManager = sessionManager;
         }
 
@@ -38,22 +38,17 @@ namespace Elmuffo.Plugin.AutoChapterSkip
         /// <returns>Task.</returns>
         public Task StartAsync(CancellationToken cancellationToken)
         {
-            ApplySettingsFromConfig();
+            Plugin_ConfigurationChanged(null, null);
             _sessionManager.PlaybackStopped += SessionManager_PlaybackStopped;
             _sessionManager.PlaybackProgress += SessionManager_PlaybackProgress;
             Plugin.Instance!.ConfigurationChanged += Plugin_ConfigurationChanged;
             return Task.CompletedTask;
         }
 
-        private void Plugin_ConfigurationChanged(object? sender, BasePluginConfiguration e)
-        {
-            ApplySettingsFromConfig();
-        }
-
-        private void ApplySettingsFromConfig()
+        private void Plugin_ConfigurationChanged(object? sender, BasePluginConfiguration? e)
         {
             var match = Plugin.Instance!.Configuration.Match;
-            _matchRegex = !string.IsNullOrEmpty(match) ? new Regex(match, RegexOptions.Compiled | RegexOptions.NonBacktracking) : null;
+            _matchRegex = !string.IsNullOrEmpty(match) ? new Regex(match, RegexOptions.ExplicitCapture | RegexOptions.Compiled) : null;
         }
 
         private void SessionManager_PlaybackProgress(object? sender, PlaybackProgressEventArgs e)
@@ -65,16 +60,17 @@ namespace Elmuffo.Plugin.AutoChapterSkip
             }
 
             var regex = _matchRegex;
-            if (regex is null)
+            if (regex is null || e.PlaybackPositionTicks is null)
             {
                 return;
             }
 
+            var playbackPositionTicks = e.PlaybackPositionTicks.GetValueOrDefault();
             var remainingChaptersIdx = -1;
             string? chapterName = null;
             for (var i = chapters.Count - 1; i >= 0; --i)
             {
-                if (chapters[i].StartPositionTicks < e.PlaybackPositionTicks)
+                if (chapters[i].StartPositionTicks < playbackPositionTicks)
                 {
                     remainingChaptersIdx = i;
                     chapterName = chapters[i].Name;
@@ -90,18 +86,7 @@ namespace Elmuffo.Plugin.AutoChapterSkip
             void Send(long? ticks, string chapterName, SessionInfo session)
             {
                 var sessionId = session.Id;
-                _currentPositions[sessionId] = ticks;
-
-                _sessionManager.SendPlaystateCommand(
-                   sessionId,
-                   sessionId,
-                   new PlaystateRequest
-                   {
-                       Command = PlaystateCommand.Seek,
-                       ControllingUserId = session.UserId.ToString("N"),
-                       SeekPositionTicks = ticks
-                   },
-                   CancellationToken.None);
+                _currentPositions[sessionId] = ticks.GetValueOrDefault();
 
                 _sessionManager.SendMessageCommand(
                     sessionId,
@@ -111,6 +96,17 @@ namespace Elmuffo.Plugin.AutoChapterSkip
                         Header = "Auto Chapter Skip",
                         Text = chapterName + " skipped",
                         TimeoutMs = 2000,
+                    },
+                    CancellationToken.None);
+
+                _sessionManager.SendPlaystateCommand(
+                    sessionId,
+                    sessionId,
+                    new PlaystateRequest
+                    {
+                        Command = PlaystateCommand.Seek,
+                        ControllingUserId = session.UserId.ToString(),
+                        SeekPositionTicks = ticks
                     },
                     CancellationToken.None);
             }
@@ -129,7 +125,8 @@ namespace Elmuffo.Plugin.AutoChapterSkip
 
             if (nextChapterTicks is null)
             {
-                if (e.PlaybackPositionTicks < e.Item.RunTimeTicks)
+                var runTimeTicks = e.Item.RunTimeTicks;
+                if (runTimeTicks is not null && playbackPositionTicks < runTimeTicks.GetValueOrDefault())
                 {
                     for (var i = remainingChaptersIdx; i < chapters.Count; ++i)
                     {
@@ -140,15 +137,13 @@ namespace Elmuffo.Plugin.AutoChapterSkip
                         }
                     }
 
-                    Send(e.Item.RunTimeTicks, chapterName, e.Session);
+                    Send(runTimeTicks, chapterName, e.Session);
                 }
 
                 return;
             }
 
-            _currentPositions.TryGetValue(e.Session.Id, out var previousChapterTicks);
-
-            if (e.PlaybackPositionTicks <= previousChapterTicks)
+            if (_currentPositions.TryGetValue(e.Session.Id, out var previousChapterTicks) && playbackPositionTicks <= previousChapterTicks)
             {
                 return;
             }
