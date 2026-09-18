@@ -14,6 +14,9 @@ A plugin for [Jellyfin](https://jellyfin.org/docs/) to automatically skip chapte
 * [Jellyfin Android](https://github.com/jellyfin/jellyfin-android)
 * [JellyCon](https://github.com/jellyfin/jellycon)
 
+> [!NOTE]
+> With [Jellyfin for Kodi](https://github.com/jellyfin/jellyfin-kodi), [jellyfin/jellyfin-kodi#1153](https://github.com/jellyfin/jellyfin-kodi/pull/1153) must be reverted in order for this plugin to work correctly.
+
 ## Installation
 
 Add a new plugin repository to Jellyfin and use https://github.com/elmuffo/jellyfin-auto-chapter-skip/blob/master/manifest.json for the Repository URL, then install Auto Chapter Skip on the Catalog tab and restart Jellyfin to complete the process
