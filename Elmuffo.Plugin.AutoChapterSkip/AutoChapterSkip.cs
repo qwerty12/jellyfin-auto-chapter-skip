@@ -56,7 +56,7 @@ namespace Elmuffo.Plugin.AutoChapterSkip
 
         private void SessionManager_PlaybackProgress(object? sender, PlaybackProgressEventArgs e)
         {
-            var chapters = e.Session.NowPlayingItem.Chapters;
+            var chapters = e.Session.NowPlayingItem?.Chapters;
             if (chapters is null || chapters.Count == 0)
             {
                 return;
@@ -156,7 +156,7 @@ namespace Elmuffo.Plugin.AutoChapterSkip
                 // playbackPositionTicks < runTimeTicks check below is also already the
                 // "don't seek past where we already are" guard, since the seek target
                 // here *is* runTimeTicks.
-                var runTimeTicks = e.Item.RunTimeTicks;
+                var runTimeTicks = e.Item?.RunTimeTicks;
                 if (runTimeTicks is { } targetTicks2 && playbackPositionTicks < targetTicks2)
                 {
                     _currentPositions[sessionId] = targetTicks2;
