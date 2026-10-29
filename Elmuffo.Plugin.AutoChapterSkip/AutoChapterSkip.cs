@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
@@ -17,6 +18,8 @@ namespace Elmuffo.Plugin.AutoChapterSkip
     /// </summary>
     public sealed class AutoChapterSkip : IHostedService
     {
+        private static readonly TimeSpan MaxSilence = TimeSpan.FromSeconds(60);
+
         private readonly ConcurrentDictionary<string, long> _currentPositions;
         private readonly ISessionManager _sessionManager;
         private Regex? _matchRegex;
@@ -53,6 +56,9 @@ namespace Elmuffo.Plugin.AutoChapterSkip
                 ? new Regex(match, RegexOptions.ExplicitCapture | RegexOptions.Compiled | RegexOptions.CultureInvariant)
                 : null;
         }
+
+        private static bool CanDeliver(SessionInfo session)
+            => session.IsActive && DateTime.UtcNow - session.LastPlaybackCheckIn <= MaxSilence;
 
         private void SessionManager_PlaybackProgress(object? sender, PlaybackProgressEventArgs e)
         {
@@ -103,8 +109,14 @@ namespace Elmuffo.Plugin.AutoChapterSkip
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            void Send(long? ticks, string chapterName, string sessionId)
+            void Send(long? ticks, string chapterName, SessionInfo session)
             {
+                if (!CanDeliver(session))
+                {
+                    return;
+                }
+
+                var sessionId = session.Id;
                 _sessionManager.SendMessageCommand(
                     sessionId,
                     sessionId,
@@ -160,7 +172,7 @@ namespace Elmuffo.Plugin.AutoChapterSkip
                 if (runTimeTicks is { } targetTicks2 && playbackPositionTicks < targetTicks2)
                 {
                     _currentPositions[sessionId] = targetTicks2;
-                    Send(runTimeTicks, chapterName, sessionId);
+                    Send(runTimeTicks, chapterName, e.Session);
                 }
 
                 return;
@@ -178,7 +190,7 @@ namespace Elmuffo.Plugin.AutoChapterSkip
                 return;
             }
 
-            Send(nextChapterTicks, chapterName, sessionId);
+            Send(nextChapterTicks, chapterName, e.Session);
         }
 
         private void SessionManager_PlaybackStopped(object? sender, PlaybackStopEventArgs e) => _currentPositions.TryRemove(e.Session.Id, out _);
