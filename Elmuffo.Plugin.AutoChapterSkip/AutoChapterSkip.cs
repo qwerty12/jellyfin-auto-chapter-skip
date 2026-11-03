@@ -83,19 +83,17 @@ public sealed class AutoChapterSkip : IHostedService
 
     private void SessionManager_PlaybackProgress(object? sender, PlaybackProgressEventArgs e)
     {
-        var chapters = e.Session.NowPlayingItem?.Chapters;
-        if (chapters is null || chapters.Count == 0)
+        var nowPlaying = e.Session.NowPlayingItem;
+        if (nowPlaying?.Chapters is not { Count: > 0 } chapters || e.Item?.Id != nowPlaying.Id)
         {
             return;
         }
 
-        var regex = _matchRegex;
-        if (regex is null || e.PlaybackPositionTicks is null)
+        if (_matchRegex is not { } regex || e.PlaybackPositionTicks is not { } playbackPositionTicks)
         {
             return;
         }
 
-        var playbackPositionTicks = e.PlaybackPositionTicks.GetValueOrDefault();
         var chapterCount = chapters.Count;
         // Chapters are always in ascending StartPositionTicks order, so instead of
         // scanning backwards from the end on every single tick (O(n), worst case
@@ -142,7 +140,7 @@ public sealed class AutoChapterSkip : IHostedService
         for (var i = remainingChaptersIdx; i < chapterCount; ++i)
         {
             var input = chapters[i].Name;
-            if (input is not null && !regex.IsMatch(input))
+            if (input is null || !regex.IsMatch(input))
             {
                 nextChapterTicks = chapters[i].StartPositionTicks;
                 break;
@@ -161,7 +159,7 @@ public sealed class AutoChapterSkip : IHostedService
             // playbackPositionTicks < runTimeTicks check below is also already the
             // "don't seek past where we already are" guard, since the seek target
             // here *is* runTimeTicks.
-            var runTimeTicks = e.Item?.RunTimeTicks;
+            var runTimeTicks = nowPlaying.RunTimeTicks;
             if (runTimeTicks is { } targetTicks2 && playbackPositionTicks < targetTicks2)
             {
                 _currentPositions[sessionId] = targetTicks2;
