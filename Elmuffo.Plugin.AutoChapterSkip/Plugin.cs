@@ -13,7 +13,7 @@ namespace Elmuffo.Plugin.AutoChapterSkip;
 /// </summary>
 public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
 {
-    private static readonly string ConfigPagePath = $"{typeof(Plugin).Namespace}.Configuration.configPage.html";
+    private static readonly string _configPagePath = $"{typeof(Plugin).Namespace}.Configuration.configPage.html";
 
     /// <summary>
     /// Initializes a new instance of the <see cref="Plugin"/> class.
@@ -45,7 +45,7 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
             new PluginPageInfo
             {
                 Name = this.Name,
-                EmbeddedResourcePath = ConfigPagePath
+                EmbeddedResourcePath = _configPagePath
             }
         ];
     }
