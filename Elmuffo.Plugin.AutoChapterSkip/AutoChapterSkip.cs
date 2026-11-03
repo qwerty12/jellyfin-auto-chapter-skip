@@ -57,7 +57,8 @@ namespace Elmuffo.Plugin.AutoChapterSkip
         public Task StartAsync(CancellationToken cancellationToken)
         {
             Plugin_ConfigurationChanged(null, null);
-            _sessionManager.PlaybackStopped += SessionManager_PlaybackStopped;
+            _sessionManager.PlaybackStart += SessionManager_PlaybackStartOrStop;
+            _sessionManager.PlaybackStopped += SessionManager_PlaybackStartOrStop;
             _sessionManager.PlaybackProgress += SessionManager_PlaybackProgress;
             Plugin.Instance!.ConfigurationChanged += Plugin_ConfigurationChanged;
             return Task.CompletedTask;
@@ -273,7 +274,9 @@ namespace Elmuffo.Plugin.AutoChapterSkip
             Send(nextChapterTicks, chapterName, e.Session);
         }
 
-        private void SessionManager_PlaybackStopped(object? sender, PlaybackStopEventArgs e)
+        // Cleared on start as well as on stop: a session can play several items in a row, and a client that never reports
+        // a stop would otherwise leave the previous item's targets behind to suppress skipping in the next one.
+        private void SessionManager_PlaybackStartOrStop(object? sender, PlaybackProgressEventArgs e)
         {
             _currentPositions.TryRemove(e.Session.Id, out _);
             _warmedUpChapters.TryRemove(e.Session.Id, out _);
@@ -287,7 +290,8 @@ namespace Elmuffo.Plugin.AutoChapterSkip
         public Task StopAsync(CancellationToken cancellationToken)
         {
             _sessionManager.PlaybackProgress -= SessionManager_PlaybackProgress;
-            _sessionManager.PlaybackStopped -= SessionManager_PlaybackStopped;
+            _sessionManager.PlaybackStopped -= SessionManager_PlaybackStartOrStop;
+            _sessionManager.PlaybackStart -= SessionManager_PlaybackStartOrStop;
             Plugin.Instance!.ConfigurationChanged -= Plugin_ConfigurationChanged;
             _matchRegex = null;
             _currentPositions.Clear();
