@@ -9,6 +9,7 @@ using MediaBrowser.Controller.Session;
 using MediaBrowser.Model.Plugins;
 using MediaBrowser.Model.Session;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 namespace Elmuffo.Plugin.AutoChapterSkip
 {
@@ -30,18 +31,22 @@ namespace Elmuffo.Plugin.AutoChapterSkip
         private readonly ConcurrentDictionary<string, long> _currentPositions;
         private readonly ConcurrentDictionary<string, long> _warmedUpChapters;
         private readonly ISessionManager _sessionManager;
+        private readonly ILogger<AutoChapterSkip> _logger;
         private Regex? _matchRegex;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="AutoChapterSkip"/> class.
         /// </summary>
         /// <param name="sessionManager">Session manager.</param>
+        /// <param name="logger">Logger.</param>
         public AutoChapterSkip(
-            ISessionManager sessionManager)
+            ISessionManager sessionManager,
+            ILogger<AutoChapterSkip> logger)
         {
             _currentPositions = new ConcurrentDictionary<string, long>();
             _warmedUpChapters = new ConcurrentDictionary<string, long>();
             _sessionManager = sessionManager;
+            _logger = logger;
         }
 
         /// <summary>
@@ -66,9 +71,20 @@ namespace Elmuffo.Plugin.AutoChapterSkip
                 return;
             }
 
-            _matchRegex = !string.IsNullOrEmpty(match)
-                ? new Regex(match, RegexOptions.ExplicitCapture | RegexOptions.Compiled | RegexOptions.CultureInvariant)
-                : null;
+            Regex? regex = null;
+            if (!string.IsNullOrEmpty(match))
+            {
+                try
+                {
+                    regex = new Regex(match, RegexOptions.ExplicitCapture | RegexOptions.Compiled | RegexOptions.CultureInvariant);
+                }
+                catch (RegexParseException ex)
+                {
+                    _logger.LogError(ex, "Invalid match pattern '{Pattern}', no chapters will be skipped", match);
+                }
+            }
+
+            _matchRegex = regex;
         }
 
         private static bool CanDeliver(SessionInfo session)
