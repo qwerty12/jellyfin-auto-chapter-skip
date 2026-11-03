@@ -221,6 +221,14 @@ namespace Elmuffo.Plugin.AutoChapterSkip
                     CancellationToken.None);
             }
 
+            // Once a skip has been sent for a target, nothing more is sent until playback passes that target. A lost
+            // seek is not retried, and the user can seek back into a skipped chapter and watch it.
+            var sessionId = e.Session.Id;
+            if (_currentPositions.TryGetValue(sessionId, out var previousChapterTicks) && playbackPositionTicks <= previousChapterTicks)
+            {
+                return;
+            }
+
             ++remainingChaptersIdx;
             long? nextChapterTicks = null;
             for (var i = remainingChaptersIdx; i < chapterCount; ++i)
@@ -233,7 +241,6 @@ namespace Elmuffo.Plugin.AutoChapterSkip
                 }
             }
 
-            var sessionId = e.Session.Id;
             if (nextChapterTicks is null)
             {
                 // NOTE: the loop above already walked every remaining chapter
@@ -253,11 +260,6 @@ namespace Elmuffo.Plugin.AutoChapterSkip
                     Send(runTimeTicks, chapterName, e.Session);
                 }
 
-                return;
-            }
-
-            if (_currentPositions.TryGetValue(sessionId, out var previousChapterTicks) && playbackPositionTicks <= previousChapterTicks)
-            {
                 return;
             }
 
