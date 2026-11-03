@@ -50,6 +50,7 @@ public sealed class AutoChapterSkip : IHostedService
         _sessionManager.PlaybackStart += SessionManager_PlaybackStartOrStop;
         _sessionManager.PlaybackStopped += SessionManager_PlaybackStartOrStop;
         _sessionManager.PlaybackProgress += SessionManager_PlaybackProgress;
+        _sessionManager.SessionEnded += SessionManager_SessionEnded;
         Plugin.Instance!.ConfigurationChanged += Plugin_ConfigurationChanged;
         return Task.CompletedTask;
     }
@@ -121,8 +122,7 @@ public sealed class AutoChapterSkip : IHostedService
             return;
         }
 
-        var chapterName = chapters[remainingChaptersIdx].Name;
-        if (chapterName is null || !regex.IsMatch(chapterName))
+        if (chapters[remainingChaptersIdx].Name is not { } chapterName || !regex.IsMatch(chapterName))
         {
             return;
         }
@@ -187,36 +187,46 @@ public sealed class AutoChapterSkip : IHostedService
             }
 
             var sessionId = session.Id;
-            _sessionManager.SendMessageCommand(
-                sessionId,
-                sessionId,
-                new MessageCommand
-                {
-                    Header = "Auto Chapter Skip",
-                    Text = chapterName + " skipped",
-                    TimeoutMs = 2000,
-                },
-                CancellationToken.None);
+            try
+            {
+                // ControllingUserId deliberately left unset: SendPlaystateCommand always
+                // overwrites it from the resolved controlling session whenever the
+                // controllingSessionId argument (sessionId, below) is non-empty - which
+                // it always is here - so anything set on this object is discarded anyway.
+                _sessionManager.SendPlaystateCommand(
+                    sessionId,
+                    sessionId,
+                    new PlaystateRequest
+                    {
+                        Command = PlaystateCommand.Seek,
+                        SeekPositionTicks = ticks,
+                    },
+                    CancellationToken.None);
 
-            // ControllingUserId deliberately left unset: SendPlaystateCommand always
-            // overwrites it from the resolved controlling session whenever the
-            // controllingSessionId argument (sessionId, below) is non-empty - which
-            // it always is here - so anything set on this object is discarded anyway.
-            _sessionManager.SendPlaystateCommand(
-                sessionId,
-                sessionId,
-                new PlaystateRequest
-                {
-                    Command = PlaystateCommand.Seek,
-                    SeekPositionTicks = ticks,
-                },
-                CancellationToken.None);
+                _sessionManager.SendMessageCommand(
+                    sessionId,
+                    sessionId,
+                    new MessageCommand
+                    {
+                        Header = "Auto Chapter Skip",
+                        Text = chapterName + " skipped",
+                        TimeoutMs = 2000,
+                    },
+                    CancellationToken.None);
+            }
+            catch (Exception)
+            {
+                // _logger.LogDebug(ex, "Could not skip '{Chapter}' for session {SessionId}", chapterName, sessionId);
+            }
         }
     }
 
     // Cleared on start as well as on stop: a session can play several items in a row, and a client that never reports
     // a stop would otherwise leave the previous item's targets behind to suppress skipping in the next one.
     private void SessionManager_PlaybackStartOrStop(object? sender, PlaybackProgressEventArgs e) => _currentPositions.TryRemove(e.Session.Id, out _);
+
+    // A session that ends without ever reporting a stop would otherwise keep its entry for good.
+    private void SessionManager_SessionEnded(object? sender, SessionEventArgs e) => _currentPositions.TryRemove(e.SessionInfo.Id, out _);
 
     /// <summary>
     /// Tears it down.
@@ -226,6 +236,7 @@ public sealed class AutoChapterSkip : IHostedService
     public Task StopAsync(CancellationToken cancellationToken)
     {
         _sessionManager.PlaybackProgress -= SessionManager_PlaybackProgress;
+        _sessionManager.SessionEnded -= SessionManager_SessionEnded;
         _sessionManager.PlaybackStopped -= SessionManager_PlaybackStartOrStop;
         _sessionManager.PlaybackStart -= SessionManager_PlaybackStartOrStop;
         Plugin.Instance!.ConfigurationChanged -= Plugin_ConfigurationChanged;
