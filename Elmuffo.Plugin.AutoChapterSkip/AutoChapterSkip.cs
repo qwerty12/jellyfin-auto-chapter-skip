@@ -19,17 +19,9 @@ namespace Elmuffo.Plugin.AutoChapterSkip
     /// </summary>
     public sealed class AutoChapterSkip : IHostedService
     {
-        // Warm-up probe (experimental): shortly before a matching chapter that starts late in the file, the client is
-        // sent a silent ForceKeepAlive, so the connection has just carried traffic when the skip commands follow.
-        // Nothing observes the client's reply, so whether this helps is only found out by trying it.
-        private const int KeepAliveTimeoutSeconds = 60;
-        private const long WarmUpMinChapterStartTicks = 10 * TimeSpan.TicksPerMinute;
-        private const long WarmUpLeadTicks = 10 * TimeSpan.TicksPerSecond;
-
-        private static readonly TimeSpan MaxSilence = TimeSpan.FromSeconds(60);
+        private const long MaxSilence = 60 * TimeSpan.TicksPerSecond;
 
         private readonly ConcurrentDictionary<string, long> _currentPositions;
-        private readonly ConcurrentDictionary<string, long> _warmedUpChapters;
         private readonly ISessionManager _sessionManager;
         private readonly ILogger<AutoChapterSkip> _logger;
         private Regex? _matchRegex;
@@ -44,7 +36,6 @@ namespace Elmuffo.Plugin.AutoChapterSkip
             ILogger<AutoChapterSkip> logger)
         {
             _currentPositions = new ConcurrentDictionary<string, long>();
-            _warmedUpChapters = new ConcurrentDictionary<string, long>();
             _sessionManager = sessionManager;
             _logger = logger;
         }
@@ -89,29 +80,7 @@ namespace Elmuffo.Plugin.AutoChapterSkip
         }
 
         private static bool CanDeliver(SessionInfo session)
-            => session.IsActive && DateTime.UtcNow - session.LastPlaybackCheckIn <= MaxSilence;
-
-        private bool TryClaimWarmUp(string sessionId, long chapterStartTicks)
-        {
-            while (true)
-            {
-                if (!_warmedUpChapters.TryGetValue(sessionId, out var warmedUpTicks))
-                {
-                    if (_warmedUpChapters.TryAdd(sessionId, chapterStartTicks))
-                    {
-                        return true;
-                    }
-                }
-                else if (warmedUpTicks == chapterStartTicks)
-                {
-                    return false;
-                }
-                else if (_warmedUpChapters.TryUpdate(sessionId, chapterStartTicks, warmedUpTicks))
-                {
-                    return true;
-                }
-            }
-        }
+            => session.IsActive && (DateTime.UtcNow - session.LastPlaybackCheckIn).Ticks <= MaxSilence;
 
         private void SessionManager_PlaybackProgress(object? sender, PlaybackProgressEventArgs e)
         {
@@ -146,32 +115,6 @@ namespace Elmuffo.Plugin.AutoChapterSkip
                 else
                 {
                     hi = mid;
-                }
-            }
-
-            // lo is now the first chapter that has not started yet. If it is a matching chapter that starts late in
-            // the file and is about to begin, warm the connection up once, ahead of the skip commands.
-            if (lo < chapterCount)
-            {
-                var nextChapter = chapters[lo];
-                var nextStartTicks = nextChapter.StartPositionTicks;
-                var untilNextTicks = nextStartTicks - playbackPositionTicks;
-                if (nextStartTicks >= WarmUpMinChapterStartTicks
-                    && untilNextTicks is > 0 and <= WarmUpLeadTicks
-                    && nextChapter.Name is { } nextName
-                    && regex.IsMatch(nextName)
-                    && e.Session.IsActive
-                    && TryClaimWarmUp(e.Session.Id, nextStartTicks))
-                {
-                    var deviceId = e.Session.DeviceId;
-                    if (!string.IsNullOrEmpty(deviceId))
-                    {
-                        _sessionManager.SendMessageToUserDeviceSessions(
-                            deviceId,
-                            SessionMessageType.ForceKeepAlive,
-                            KeepAliveTimeoutSeconds,
-                            CancellationToken.None);
-                    }
                 }
             }
 
@@ -276,11 +219,7 @@ namespace Elmuffo.Plugin.AutoChapterSkip
 
         // Cleared on start as well as on stop: a session can play several items in a row, and a client that never reports
         // a stop would otherwise leave the previous item's targets behind to suppress skipping in the next one.
-        private void SessionManager_PlaybackStartOrStop(object? sender, PlaybackProgressEventArgs e)
-        {
-            _currentPositions.TryRemove(e.Session.Id, out _);
-            _warmedUpChapters.TryRemove(e.Session.Id, out _);
-        }
+        private void SessionManager_PlaybackStartOrStop(object? sender, PlaybackProgressEventArgs e) => _currentPositions.TryRemove(e.Session.Id, out _);
 
         /// <summary>
         /// Protected dispose.
@@ -295,7 +234,6 @@ namespace Elmuffo.Plugin.AutoChapterSkip
             Plugin.Instance!.ConfigurationChanged -= Plugin_ConfigurationChanged;
             _matchRegex = null;
             _currentPositions.Clear();
-            _warmedUpChapters.Clear();
             return Task.CompletedTask;
         }
     }
