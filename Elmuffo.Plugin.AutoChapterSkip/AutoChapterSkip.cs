@@ -22,8 +22,8 @@ namespace Elmuffo.Plugin.AutoChapterSkip
         // sent a silent ForceKeepAlive, so the connection has just carried traffic when the skip commands follow.
         // Nothing observes the client's reply, so whether this helps is only found out by trying it.
         private const int KeepAliveTimeoutSeconds = 60;
-        private static readonly long WarmUpMinChapterStartTicks = TimeSpan.FromMinutes(10).Ticks;
-        private static readonly long WarmUpLeadTicks = TimeSpan.FromSeconds(10).Ticks;
+        private const long WarmUpMinChapterStartTicks = 10 * TimeSpan.TicksPerMinute;
+        private const long WarmUpLeadTicks = 10 * TimeSpan.TicksPerSecond;
 
         private static readonly TimeSpan MaxSilence = TimeSpan.FromSeconds(60);
 
@@ -61,6 +61,11 @@ namespace Elmuffo.Plugin.AutoChapterSkip
         private void Plugin_ConfigurationChanged(object? sender, BasePluginConfiguration? e)
         {
             var match = Plugin.Instance!.Configuration.Match;
+            if (string.Equals(_matchRegex?.ToString() ?? string.Empty, match, StringComparison.Ordinal))
+            {
+                return;
+            }
+
             _matchRegex = !string.IsNullOrEmpty(match)
                 ? new Regex(match, RegexOptions.ExplicitCapture | RegexOptions.Compiled | RegexOptions.CultureInvariant)
                 : null;
@@ -135,8 +140,7 @@ namespace Elmuffo.Plugin.AutoChapterSkip
                 var nextStartTicks = nextChapter.StartPositionTicks;
                 var untilNextTicks = nextStartTicks - playbackPositionTicks;
                 if (nextStartTicks >= WarmUpMinChapterStartTicks
-                    && untilNextTicks > 0
-                    && untilNextTicks <= WarmUpLeadTicks
+                    && untilNextTicks is > 0 and <= WarmUpLeadTicks
                     && nextChapter.Name is { } nextName
                     && regex.IsMatch(nextName)
                     && e.Session.IsActive
